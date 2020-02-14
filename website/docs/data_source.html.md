@@ -49,3 +49,6 @@ The following arguments are supported:
 The following attributes are exported:
 
 * `body` - The raw body of the HTTP response.
+* `headers` - The map of strings representing the HTTP response headers. If
+  there are multiple header values returned in response for the same header,
+  only the last one will be reflected in the map.
