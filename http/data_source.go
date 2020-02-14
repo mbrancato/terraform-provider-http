@@ -4,16 +4,29 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"time"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/helper/validation"
 )
 
 func httpDataSource() *schema.Resource {
+
+	var allowedMethods = []string{"GET", "POST", "PATCH", "DELETE", "PUT", "HEAD", "OPTIONS", "CONNECT", "TRACE"}
+
 	return &schema.Resource{
 		Read: dataSourceRead,
 
 		Schema: map[string]*schema.Schema{
+			"method": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Default:      "GET",
+				ValidateFunc: validation.StringInSlice(allowedMethods, false),
+			},
+
 			"url": {
 				Type:     schema.TypeString,
 				Required: true,
@@ -25,6 +38,20 @@ func httpDataSource() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
+				Sensitive: true,
+			},
+
+			"request_body": {
+				Type:      schema.TypeString,
+				Optional:  true,
+				Sensitive: true,
+			},
+
+			"response_status_code": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Default:      200,
+				ValidateFunc: validation.IntBetween(100, 599),
 			},
 
 			"body": {
@@ -46,17 +73,24 @@ func httpDataSource() *schema.Resource {
 func dataSourceRead(d *schema.ResourceData, meta interface{}) error {
 
 	url := d.Get("url").(string)
+	method := d.Get("method").(string)
 	headers := d.Get("request_headers").(map[string]interface{})
+	body := d.Get("request_body").(string)
+	statusCode := d.Get("response_status_code").(int)
 
 	client := &http.Client{}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		return fmt.Errorf("Error creating request: %s", err)
 	}
 
 	for name, value := range headers {
 		req.Header.Set(name, value.(string))
+	}
+
+	if len(body) != 0 {
+		req.Body = ioutil.NopCloser(strings.NewReader(body))
 	}
 
 	resp, err := client.Do(req)
@@ -66,7 +100,12 @@ func dataSourceRead(d *schema.ResourceData, meta interface{}) error {
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("Error while reading response body. %s", err)
+	}
+
+	if resp.StatusCode != statusCode {
 		return fmt.Errorf("HTTP request error. Response code: %d", resp.StatusCode)
 	}
 
@@ -75,14 +114,9 @@ func dataSourceRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Content-Type is not a text type. Got: %s", contentType)
 	}
 
-	bytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("Error while reading response body. %s", err)
-	}
-
 	d.Set("body", string(bytes))
 	d.Set("headers", flattenResponseHeaders(resp.Header))
-	d.SetId(time.Now().UTC().String())
+	d.SetId(uuid.New().String())
 
 	return nil
 }

@@ -13,7 +13,6 @@ website/build
 website/node_modules
 .vagrant/
 *.backup
-./*.tfstate
 .terraform/
 *.log
 *.bak
@@ -26,6 +25,12 @@ website/node_modules
 
 website/vendor
 
-# Test exclusions
-!command/test-fixtures/**/*.tfstate
-!command/test-fixtures/**/.terraform/
+# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+go.sum
+terraform-provider-http

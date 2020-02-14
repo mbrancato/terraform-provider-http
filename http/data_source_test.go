@@ -72,7 +72,7 @@ data "http" "http_test" {
   url = "%s/restricted/meta_%d.txt"
 
   request_headers = {
-    "Authorization" = "Zm9vOmJhcg=="
+    Authorization = "Zm9vOmJhcg=="
   }
 }
 

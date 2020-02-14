@@ -4,21 +4,25 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/validation"
 )
 
-var allowedMethods = []string{"GET", "POST", "PATCH", "DELETE", "PUT", "HEAD", "OPTIONS", "CONNECT", "TRACE"}
-
 func httpResource() *schema.Resource {
-	// Consider data sensitive if env variables is set to true.
-	sensitive, _ := strconv.ParseBool(GetEnvOrDefault("HTTP_DATA_IS_SENSITIVE", "false"))
+
+	var allowedMethods = []string{"GET", "POST", "PATCH", "DELETE", "PUT", "HEAD", "OPTIONS", "CONNECT", "TRACE"}
 
 	createSchema := map[string]*schema.Schema{
+		"url": {
+			Type:     schema.TypeString,
+			Required: true,
+			ForceNew: true,
+		},
+
 		"method": {
 			Type:         schema.TypeString,
 			Optional:     true,
@@ -39,7 +43,7 @@ func httpResource() *schema.Resource {
 			Type:      schema.TypeMap,
 			Optional:  true,
 			ForceNew:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 			Elem: &schema.Schema{
 				Type: schema.TypeString,
 			},
@@ -49,19 +53,19 @@ func httpResource() *schema.Resource {
 			Type:      schema.TypeString,
 			Optional:  true,
 			ForceNew:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 		},
 
 		"body": {
 			Type:      schema.TypeString,
 			Computed:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 		},
 
 		"headers": {
 			Type:      schema.TypeMap,
 			Computed:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 			Elem: &schema.Schema{
 				Type: schema.TypeString,
 			},
@@ -69,6 +73,12 @@ func httpResource() *schema.Resource {
 	}
 
 	updateSchema := map[string]*schema.Schema{
+		"url": {
+			Type:     schema.TypeString,
+			Required: true,
+			ForceNew: true,
+		},
+
 		"method": {
 			Type:         schema.TypeString,
 			Optional:     true,
@@ -85,7 +95,7 @@ func httpResource() *schema.Resource {
 		"request_headers": {
 			Type:      schema.TypeMap,
 			Optional:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 			Elem: &schema.Schema{
 				Type: schema.TypeString,
 			},
@@ -94,19 +104,19 @@ func httpResource() *schema.Resource {
 		"request_body": {
 			Type:      schema.TypeString,
 			Optional:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 		},
 
 		"body": {
 			Type:      schema.TypeString,
 			Computed:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 		},
 
 		"headers": {
 			Type:      schema.TypeMap,
 			Computed:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 			Elem: &schema.Schema{
 				Type: schema.TypeString,
 			},
@@ -114,6 +124,12 @@ func httpResource() *schema.Resource {
 	}
 
 	deleteSchema := map[string]*schema.Schema{
+		"url": {
+			Type:     schema.TypeString,
+			Required: true,
+			ForceNew: true,
+		},
+
 		"method": {
 			Type:         schema.TypeString,
 			Optional:     true,
@@ -130,7 +146,7 @@ func httpResource() *schema.Resource {
 		"request_headers": {
 			Type:      schema.TypeMap,
 			Optional:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 			Elem: &schema.Schema{
 				Type: schema.TypeString,
 			},
@@ -139,7 +155,7 @@ func httpResource() *schema.Resource {
 		"request_body": {
 			Type:      schema.TypeString,
 			Optional:  true,
-			Sensitive: sensitive,
+			Sensitive: true,
 		},
 	}
 
@@ -150,14 +166,11 @@ func httpResource() *schema.Resource {
 		Delete: resourceDelete,
 
 		Schema: map[string]*schema.Schema{
-			"url": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
-
 			"triggers": {
-				Type:     schema.TypeMap,
+				Type: schema.TypeMap,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
 				Optional: true,
 				ForceNew: true,
 			},
@@ -227,7 +240,7 @@ func httpRequest(d *schema.ResourceData, meta interface{}, action string) error 
 		return nil
 	}
 
-	url := d.Get("url").(string)
+	url := d.Get("action.0." + action + ".0.url").(string)
 
 	headers := d.Get("action.0." + action + ".0.request_headers").(map[string]interface{})
 	body := d.Get("action.0." + action + ".0.request_body").(string)
@@ -255,27 +268,31 @@ func httpRequest(d *schema.ResourceData, meta interface{}, action string) error 
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != statusCode {
-		return fmt.Errorf("%s HTTP request error. Response code: %d", action, resp.StatusCode)
-	}
-
 	if action != "delete" {
+		bytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("Error while reading %s response body. %s", action, err)
+		}
+
+		if resp.StatusCode != statusCode {
+			return fmt.Errorf("%s HTTP request error. Response code: %d\n\n%s", action, resp.StatusCode, string(bytes))
+		}
+
 		// ignore responses from the delete action
 		contentType := resp.Header.Get("Content-Type")
 		if contentType == "" || isContentTypeAllowed(contentType) == false {
 			return fmt.Errorf("Content-Type is not a text type. Got: %s", contentType)
 		}
 
-		bytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("Error while reading %s response body. %s", action, err)
-		}
-
 		d.Set("action", flattenAction(d.Get("action"), bytes, resp.Header, action))
+	} else {
+		if resp.StatusCode != statusCode {
+			return fmt.Errorf("%s HTTP request error. Response code: %d", action, resp.StatusCode)
+		}
 	}
 
 	if action == "create" {
-		d.SetId(time.Now().UTC().String())
+		d.SetId(uuid.New().String())
 	}
 
 	return nil

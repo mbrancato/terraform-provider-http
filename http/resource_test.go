@@ -12,9 +12,9 @@ import (
 
 const testResourceConfig_basic = `
 resource "http" "http_test" {
-  url = "%s/meta_%d.txt"
   action {
     create {
+      url = "%s/meta_%d.txt"
       method = "%s"
     }
   }
@@ -59,13 +59,14 @@ func TestResource_http200(t *testing.T) {
 
 const testResourceConfig_update = `
 resource "http" "http_test" {
-  url = "%s/meta_%d.txt"
   action {
     create {
+      url = "%s/meta_%d.txt"
       method = "%s"
     }
 
     update {
+      url = "%s/meta_%d.txt"
       method = "PUT"
       request_body = jsonencode({"hello":"update"})
     }
@@ -106,7 +107,7 @@ func TestResource_update(t *testing.T) {
 				},
 			},
 			{
-				Config: fmt.Sprintf(testResourceConfig_update, testHttpMock.server.URL, 200, http.MethodGet),
+				Config: fmt.Sprintf(testResourceConfig_update, testHttpMock.server.URL, 200, http.MethodGet, testHttpMock.server.URL, 200),
 				Check: func(s *terraform.State) error {
 					_, ok := s.RootModule().Resources["http.http_test"]
 					if !ok {
@@ -131,13 +132,14 @@ func TestResource_update(t *testing.T) {
 
 const testResourceConfig_delete = `
 resource "http" "http_test" {
-  url = "%s/meta_%d.txt"
   action {
     create {
+      url = "%s/meta_%d.txt"
       method = "%s"
     }
 
     delete {
+      url = "%s/meta_%d.txt"
       method = "DELETE"
       response_status_code = 204
     }
@@ -158,7 +160,7 @@ func TestResource_delete(t *testing.T) {
 		Providers: testProviders,
 		Steps: []resource.TestStep{
 			{
-				Config: fmt.Sprintf(testResourceConfig_delete, testHttpMock.server.URL, 200, http.MethodGet),
+				Config: fmt.Sprintf(testResourceConfig_delete, testHttpMock.server.URL, 200, http.MethodGet, testHttpMock.server.URL, 200),
 				Check: func(s *terraform.State) error {
 					_, ok := s.RootModule().Resources["http.http_test"]
 					if !ok {
@@ -199,12 +201,12 @@ func TestResource_http404(t *testing.T) {
 
 const testResourceConfig_withHeaders = `
 resource "http" "http_test" {
-  url = "%s/restricted/meta_%d.txt"
 
   action {
     create {
+      url = "%s/restricted/meta_%d.txt"
       request_headers = {
-        "Authorization" = "Zm9vOmJhcg=="
+        Authorization = "Zm9vOmJhcg=="
       }
       request_body = jsonencode({"hello":"world"})
     }
@@ -250,10 +252,9 @@ func TestResource_withHeaders200(t *testing.T) {
 
 const testResourceConfig_utf8 = `
 resource "http" "http_test" {
-  url = "%s/utf-8/meta_%d.txt"
-
   action {
     create {
+      url = "%s/utf-8/meta_%d.txt"
       request_body = jsonencode({"hello":"world"})
     }
   }
@@ -298,10 +299,10 @@ func TestResource_utf8(t *testing.T) {
 
 const testResourceConfig_utf16 = `
 resource "http" "http_test" {
-  url = "%s/utf-16/meta_%d.txt"
 
   action {
     create {
+      url = "%s/utf-16/meta_%d.txt"
       request_body = jsonencode({"hello":"world"})
     }
   }
@@ -340,7 +341,7 @@ func TestResource_compileError(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:      testResourceConfig_error,
-				ExpectError: regexp.MustCompile("The argument \"url\" is required, but no definition was found."),
+				ExpectError: regexp.MustCompile("config is invalid: \"action\": required field is not set"),
 			},
 		},
 	})
@@ -350,10 +351,10 @@ func TestResource_method(t *testing.T) {
 
 	testConf := `
 resource "http" "http_test" {
-  url = "%s/meta_%d.txt"
 
   action {
     create {
+      url = "%s/meta_%d.txt"
       method = "%s"
       request_body = jsonencode({"hello": "world"})
     }
